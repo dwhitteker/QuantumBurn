@@ -11,14 +11,63 @@ This suite is designed to push multi-core processors (tested on 64-thread, water
 * **Deadlock Evasion:** Complex multi-qubit entanglements (like 3-way GHZ states and Teleportation) utilize strictly ordered memory-address sorting to prevent the "Dining Philosophers" deadlock under extreme thread contention.
 * **Core Affinity:** Utilizes OpenMP `proc_bind(spread)` to bypass OS thread scheduling and pin workloads directly to physical cores for maximum throughput.
 
-## The Architecture: Linear vs. Exponential Scaling
-Traditional full-state quantum simulators must track the entire Hilbert space of the system. For a system of `N` qubits, they must calculate and store `2^N` complex amplitudes. Under that model, simulating just 40 qubits requires over a terabyte of RAM, creating a massive "exponential memory wall."
+## The Architecture: L1-Aligned Zero-Latency Routing
 
-**QuantumBurn** completely bypasses the exponential memory wall by using a flat, localized node-graph architecture. 
-* **O(N) Linear Growth:** Each qubit is represented as an independent, 64-byte cache-aligned struct within a 1D array. Adding a new qubit to the simulation costs exactly 64 bytes of RAM, regardless of how large the system is. 
-* **Localized Entanglement:** Instead of calculating a massive global tensor product, entanglement and decoherence are simulated using high-speed atomic locks directly between the specific interacting structs. 
+To achieve sub-40-second execution times on massive datasets, the CPU's Arithmetic Logic Units (ALUs) must be fed data without waiting on main memory (RAM) lookups. 
 
-This localized approach is what allows QuantumBurn to successfully process quantum phenomena—like BB84 encryption drops and massive GHZ triplet states—across arrays of 1,000,000+ qubits on standard consumer hardware without triggering out-of-memory (OOM) fatal errors.
+This architecture abandons the traditional global state-vector tensor product. Instead, every qubit is treated as an independent node in a 1D C array. 
+
+By aggressively padding the `LogicalQubit` struct to exactly 64 bytes, it perfectly maps to a single x86 L1 cache line. This physically isolates each qubit in the CPU cache, completely eliminating false-sharing cache invalidations when 64 threads hit the array simultaneously.
+
+But rather than leaving the padding as dead space, the remaining 48 bytes are utilized as a **high-speed, localized instruction buffer**. 
+
+
+
+Using a 64-bit packed `union`, each qubit carries its own routing data, entanglement targets, and physics flags. When a thread pulls a qubit into the L1 cache, the memory controller pulls its next 6 scheduled operations and target pointers in the exact same clock cycle. This allows the OpenMP threads to execute complex entanglements (like GHZ and Bell States) without ever halting for a RAM lookup.
+
+```c
+#include <stdint.h>
+#include <stdatomic.h>
+
+// ---------------------------------------------------------
+// 64-Bit Packed Metadata Word (8 Bytes Total)
+// ---------------------------------------------------------
+typedef union {
+    uint64_t raw_data; // AVX-512 / ALU ready 
+    struct {
+        uint64_t updated_flag    : 1;  // Processed this tick?
+        uint64_t gate_type       : 4;  // Gate instruction (H, CNOT, etc.)
+        uint64_t router_array    : 4;  // Real/Imag data source
+        uint64_t router_stack    : 4;  // Cluster Stack ID
+        uint64_t block_id        : 6;  // Target within the 64-byte stack
+        uint64_t is_syndrome     : 1;  // Surface Code: Data vs Measure
+        uint64_t virtual_z_flip  : 1;  // Track Phase/Sign flips
+        uint64_t noise_injected  : 1;  // Decoherence tracking
+        uint64_t is_entangled    : 1;  // Active entanglement flag
+        uint64_t reserved_flag   : 1;  
+        uint64_t target_qubit_id : 40; // Addresses up to 1.09 Trillion qubits
+    } __attribute__((packed));
+} QubitMetadata;
+
+// ---------------------------------------------------------
+// The Final L1-Aligned Qubit Node
+// ---------------------------------------------------------
+typedef struct {
+    // 1. Quantum State (8 bytes)
+    float amplitude_real;
+    float amplitude_imag;
+    
+    // 2. Concurrency & ID (8 bytes)
+    _Atomic int lock;    
+    int id;              
+    
+    // 3. The Hardware Optimization (48 bytes)
+    // 48 bytes / 8 bytes = Exactly 6 slots.
+    // Every qubit carries its own localized history and routing targets
+    // directly inside the L1 cache line.
+    QubitMetadata ops[6]; 
+
+} __attribute__((aligned(64))) LogicalQubit;
 
 ## The Simulation Suite
 

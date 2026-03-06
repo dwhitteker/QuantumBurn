@@ -6,7 +6,7 @@
 #include <stdatomic.h>
 
 // The 40-bit Semiprime Target to factor
-#define TARGET_N 1000036000099ULL 
+#define TARGET_N 14254051285619ULL//1000036000099ULL 
 #define MAX_GUESSES 10000 
 
 // Global flag to stop all threads once the factors are found
