@@ -1,6 +1,10 @@
 # QuantumBurn: Bare-Metal Quantum Simulator
 
+[![LinkedIn Article](https://img.shields.io/badge/Read_The_Architecture_Article-LinkedIn-0A66C2?style=for-the-badge&logo=linkedin)](https://www.linkedin.com/pulse/bypassing-quantum-memory-wall-building-64-thread-c-don-whitteker-6mhpe)
+
 **QuantumBurn** is a high-performance, classical CPU simulator for quantum mechanical concepts and algorithms. Written in C and optimized for high-core-count processors, this suite acts as both a narrative educational tool for quantum mechanics and an aggressive, bare-metal CPU stress test.
+
+*(Note: To read the full breakdown of the hardware optimizations—including O(N) memory scaling, 64-byte L1 cache alignment, and lock-free concurrency—check out the [official write-up on LinkedIn](https://www.linkedin.com/pulse/bypassing-quantum-memory-wall-building-64-thread-c-don-whitteker-6mhpe).)*
 
 Instead of hiding the math behind high-level API calls, this suite forces the CPU's Arithmetic Logic Units (ALUs) and Floating-Point Units (FPUs) to physically calculate the wave interference, phase shifts, and state collapses in real-time across millions of simulated qubits.
 
